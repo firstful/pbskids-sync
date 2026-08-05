@@ -197,9 +197,11 @@ def master_url_from_video(vid: dict) -> str:
     if asset.get("drm_enabled"):
         raise RuntimeError("video is DRM-enabled — cannot download")
     vids = asset.get("videos") or []
-    hls = next((v for v in vids if (v.get("profile") or "").startswith("hls-16x9-")), None)
+    hls = next((v for v in vids
+                if (v.get("profile") or "").startswith("hls-")
+                and "drm" not in (v.get("profile") or "").lower()), None)
     if not hls:
-        raise RuntimeError("no HLS profile in asset")
+        raise RuntimeError("no non-DRM HLS profile in asset")
     req = urllib.request.Request(hls["url"], headers={"User-Agent": UA})
     resp = http_open(req, timeout=30)
     return resp.geturl()  # final URL after urs.pbs.org 302 chain
