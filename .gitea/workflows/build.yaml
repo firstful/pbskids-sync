@@ -1,0 +1,27 @@
+name: build-image
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  build:
+    runs-on: [self-hosted]
+    container:
+      image: node:22-bookworm
+      # NOTE: workflow container.options REPLACES the runner's default
+      # (gradle-cache mount); include everything the job needs. DinD socket
+      # lives in the runner pod's shared emptyDir (/var/run).
+      options: -v /var/run/docker.sock:/var/run/docker.sock
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build and push image
+        run: |
+          set -e
+          apt-get update -qq
+          apt-get install -y -qq docker.io >/dev/null
+          echo "${{ secrets.REGISTRY_PUSH_TOKEN }}" | docker login 192.168.1.2:3000 -u reeds --password-stdin
+          docker build -t 192.168.1.2:3000/reeds/pbskids-sync:latest .
+          docker push 192.168.1.2:3000/reeds/pbskids-sync:latest
