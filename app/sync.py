@@ -303,6 +303,23 @@ def load_state(path: Path) -> dict:
     return {}
 
 
+def write_provenance_sidecar(video: Path, prov: dict) -> None:
+    """Write/merge the provenance block into <video>.finalized.json (or create
+    the sidecar if finalize hasn't run yet). Never overwrites checks/actions —
+    the finalize crawl owns those; this only sets provenance + flags."""
+    sidecar = video.with_suffix(video.suffix + ".finalized.json")
+    m = {}
+    if sidecar.exists():
+        try:
+            m = json.loads(sidecar.read_text())
+        except Exception:
+            m = {}
+    m.setdefault("schema_version", 2)
+    m.setdefault("file", str(video.relative_to(JELLYFIN_ROOT)))
+    m["provenance"] = prov
+    sidecar.write_text(json.dumps(m, indent=2))
+
+
 def save_state(path: Path, state: dict) -> None:
     STATE_DIR.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(".json.tmp")
@@ -396,6 +413,18 @@ def sync_show(cfg: dict, changed_ref: list) -> None:
         state[vid] = {"file": str(dest.relative_to(JELLYFIN_ROOT)),
                       "title": e.get("title", ""), "season": season,
                       "ep": ep_num, "updated": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())}
+        # Provenance sidecar (media-finalization contract, Reed 2026-08-06):
+        # PBS sets trusted_source=true and SEARCHES tvdb_id (the finalize crawl
+        # fills tvdb_id — the dispatcher has the TVDB key; this pod doesn't).
+        write_provenance_sidecar(dest, {
+            "trusted_source": True,
+            "tvdb_id": None,  # backfilled by finalize's pbs branch
+            "downloader": "pbskids-sync",
+            "source_urls": [f"https://pbskids.org/video/watch/{vid}"],
+            "video_id": vid,
+            "pbs_show": show, "pbs_season": season, "pbs_episode": ep_num,
+            "published_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        })
         log(f"  -> {dest.relative_to(JELLYFIN_ROOT)}")
         changed_ref[0] = True
 
